@@ -1,2 +1,2 @@
-# AI-tool-recommender
+# AI Tool Recommender
 Demo of product built for AMD to connect engineers with the best suited AI tool
