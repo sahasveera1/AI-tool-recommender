@@ -7,6 +7,7 @@ from langchain_core.tools import tool
 from src.config import VECTOR_SEARCH_ENDPOINT, VECTOR_INDEX_NAME
 
 logger = logging.getLogger(__name__)
+MAX_SEARCH_RESULTS = 5
 
 
 def get_vs_client() -> VectorSearchClient:
@@ -20,7 +21,13 @@ def get_vs_client() -> VectorSearchClient:
 @tool
 def search_ai_tools(query: str, num_results: int = 5) -> str:
     """Search for relevant AI tools based on a natural language query."""
-    logger.info("search_ai_tools called query=%r num_results=%d", query, num_results)
+    capped_num_results = min(num_results, MAX_SEARCH_RESULTS)
+    logger.info(
+        "search_ai_tools called query=%r requested_num_results=%d applied_num_results=%d",
+        query,
+        num_results,
+        capped_num_results,
+    )
     vs_client = get_vs_client()
 
     index = vs_client.get_index(
@@ -31,7 +38,7 @@ def search_ai_tools(query: str, num_results: int = 5) -> str:
     results = index.similarity_search(
         query_text=query,
         columns=["tool_summary", "vendor", "tool", "product_id"],
-        num_results=num_results,
+        num_results=capped_num_results,
     )
 
     hits = results.get("result", {}).get("data_array", [])
