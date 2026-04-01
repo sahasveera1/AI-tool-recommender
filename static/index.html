@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAVI</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background: #f7f7f8;
+    }
+    h1 {
+      margin-bottom: 8px;
+    }
+    .controls, .chat-box, .input-row {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+    input, textarea, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    button {
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    .chat-box {
+      min-height: 300px;
+      white-space: pre-wrap;
+    }
+    .msg {
+      margin-bottom: 16px;
+      padding: 12px;
+      border-radius: 10px;
+    }
+    .user {
+      background: #e8f0fe;
+    }
+    .assistant {
+      background: #eef7ea;
+    }
+    .meta {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>RAVI</h1>
+  <p>Simple test UI for your Databricks chat API.</p>
+
+  <div class="controls">
+    <div class="row">
+      <div>
+        <label for="userId">User ID</label>
+        <input id="userId" value="test_user_1" />
+      </div>
+      <div>
+        <label for="chatId">Chat ID</label>
+        <input id="chatId" placeholder="Create a new chat first" />
+      </div>
+    </div>
+    <button id="newChatBtn">Create New Chat</button>
+  </div>
+
+  <div id="chatBox" class="chat-box"></div>
+
+  <div class="input-row">
+    <label for="message">Message</label>
+    <textarea id="message" placeholder="Ask RAVI something..."></textarea>
+    <button id="sendBtn">Send Message</button>
+  </div>
+
+  <script>
+    const chatBox = document.getElementById("chatBox");
+    const userIdInput = document.getElementById("userId");
+    const chatIdInput = document.getElementById("chatId");
+    const messageInput = document.getElementById("message");
+    const newChatBtn = document.getElementById("newChatBtn");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function addMessage(role, text) {
+      const wrapper = document.createElement("div");
+      wrapper.className = `msg ${role}`;
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = role === "user" ? "You" : "RAVI";
+
+      const content = document.createElement("div");
+      content.textContent = text;
+
+      wrapper.appendChild(meta);
+      wrapper.appendChild(content);
+      chatBox.appendChild(wrapper);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    newChatBtn.addEventListener("click", async () => {
+      const res = await fetch("/api/chats", {
+        method: "POST"
+      });
+
+      if (!res.ok) {
+        alert("Failed to create chat");
+        return;
+      }
+
+      const data = await res.json();
+      chatIdInput.value = data.chat_id;
+      chatBox.innerHTML = "";
+      addMessage("assistant", `Started new chat: ${data.chat_id}`);
+    });
+
+    sendBtn.addEventListener("click", async () => {
+      const user_id = userIdInput.value.trim();
+      const chat_id = chatIdInput.value.trim();
+      const message = messageInput.value.trim();
+
+      if (!user_id || !chat_id || !message) {
+        alert("Please fill in user ID, chat ID, and message.");
+        return;
+      }
+
+      addMessage("user", message);
+      messageInput.value = "";
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          user_id,
+          chat_id,
+          message
+        })
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        addMessage("assistant", `Error: ${errorText}`);
+        return;
+      }
+
+      const data = await res.json();
+      addMessage("assistant", data.response);
+    });
+  </script>
+</body>
+</html>
