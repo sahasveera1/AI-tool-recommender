@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,6 +9,11 @@ from fastapi.staticfiles import StaticFiles
 from src.agent import agent_service
 from src.schemas import ChatRequest, ChatResponse, NewChatResponse
 from src.session_store import build_session_id
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 app = FastAPI(title="RAVI API", version="1.0.0")
 

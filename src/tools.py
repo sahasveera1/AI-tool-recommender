@@ -1,9 +1,12 @@
+import logging
 import os
 
 from databricks.vector_search.client import VectorSearchClient
 from langchain_core.tools import tool
 
 from src.config import VECTOR_SEARCH_ENDPOINT, VECTOR_INDEX_NAME
+
+logger = logging.getLogger(__name__)
 
 
 def get_vs_client() -> VectorSearchClient:
@@ -17,6 +20,7 @@ def get_vs_client() -> VectorSearchClient:
 @tool
 def search_ai_tools(query: str, num_results: int = 5) -> str:
     """Search for relevant AI tools based on a natural language query."""
+    logger.info("search_ai_tools called query=%r num_results=%d", query, num_results)
     vs_client = get_vs_client()
 
     index = vs_client.get_index(
