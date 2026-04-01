@@ -5,7 +5,10 @@ command:
   - -k
   - uvicorn.workers.UvicornWorker
   - app:app
+
 env:
+  - name: DATABRICKS_HOST
+    value: https://dbc-50714363-3e5b.cloud.databricks.com
   - name: LLM_ENDPOINT_NAME
     value: databricks-gpt-oss-120b
   - name: VECTOR_SEARCH_ENDPOINT
