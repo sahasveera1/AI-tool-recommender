@@ -1,0 +1,14 @@
+command:
+  - gunicorn
+  - -w
+  - "2"
+  - -k
+  - uvicorn.workers.UvicornWorker
+  - app:app
+env:
+  - name: LLM_ENDPOINT_NAME
+    value: databricks-gpt-oss-120b
+  - name: VECTOR_SEARCH_ENDPOINT
+    value: ai-tool-vector-endpoint
+  - name: VECTOR_INDEX_NAME
+    value: workspace.default.ai_tool_profiles_index

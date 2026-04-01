@@ -1,0 +1,29 @@
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException
+from src.agent import agent_service
+from src.schemas import ChatRequest, ChatResponse, NewChatResponse
+from src.session_store import build_session_id
+
+app = FastAPI(title="AI Tools Agent API", version="1.0.0")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/api/chats", response_model=NewChatResponse)
+def create_chat():
+    return NewChatResponse(chat_id=str(uuid4()))
+
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(req: ChatRequest):
+    try:
+        session_id = build_session_id(req.user_id, req.chat_id)
+        answer = agent_service.chat(req.message, session_id=session_id)
+        return ChatResponse(
+            response=answer,
+            user_id=req.user_id,
+            chat_id=req.chat_id,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
