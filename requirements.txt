@@ -6,7 +6,7 @@ langchain-core
 langchain-community
 databricks-langchain
 databricks-vectorsearch
-langgraph
+langgraph == 1.1.4
 fastapi
 uvicorn
 gunicorn
