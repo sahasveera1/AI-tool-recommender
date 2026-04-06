@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import mlflow
+import os
 from databricks_langchain import ChatDatabricks
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -9,6 +10,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from src.config import LLM_ENDPOINT_NAME
 from src.tools import search_ai_tools
 
+mlflow.set_tracking_uri("databricks")
+mlflow.set_experiment(experiment_id=os.environ["MLFLOW_EXPERIMENT_ID"])
 mlflow.openai.autolog()
 
 SYSTEM_PROMPT = """You are a Structured Knowledge Assistant acting as a technical advisor.
