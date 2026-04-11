@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AMD Compass — AI Tool Advisor</title>
+<title>AMD Compass - AI Tool Advisor</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -98,127 +98,75 @@
 
 const { useState, useRef, useEffect, useCallback } = React;
 
-/* ─── STORAGE ─────────────────────────────────────────────────────────────── */
 const STORAGE_KEY = 'amd_compass_v1';
 
 function loadStorage() {
-  try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; }
-  catch { return null; }
+  try {
+    const r = localStorage.getItem(STORAGE_KEY);
+    if (!r) return null;
+    const parsed = JSON.parse(r);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const chats = Array.isArray(parsed.chats) ? parsed.chats : [];
+    const messages = parsed.messages && typeof parsed.messages === 'object' ? parsed.messages : {};
+    const userId = typeof parsed.userId === 'string' ? parsed.userId : null;
+    return { userId, chats, messages };
+  } catch {
+    return null;
+  }
 }
 
 function saveStorage(data) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {}
 }
 
 function generateId(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/* ─── API LAYER ───────────────────────────────────────────────────────────────
-   MOCK MODE (current): returns canned responses with a simulated delay.
-
-   TO CONNECT THE REAL BACKEND — replace the body of sendMessage with:
-
-   Option A: through your FastAPI app.py proxy (recommended)
-   ──────────────────────────────────────────────────────────
-   const res = await fetch('/api/chat', {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ user_id, chat_id, message })
-   });
-   if (!res.ok) throw new Error(await res.text());
-   const data = await res.json();
-   return data.response;
-
-   Option B: direct Databricks Model Serving endpoint
-   ──────────────────────────────────────────────────
-   const res = await fetch('https://YOUR_WORKSPACE.cloud.databricks.com/serving-endpoints/YOUR_ENDPOINT/invocations', {
-     method: 'POST',
-     headers: {
-       'Content-Type': 'application/json',
-       'Authorization': 'Bearer YOUR_DATABRICKS_TOKEN'
-     },
-     body: JSON.stringify({
-       messages: history.map(m => ({ role: m.role, content: m.content }))
-     })
-   });
-   const data = await res.json();
-   return data.choices[0].message.content;
-─────────────────────────────────────────────────────────────────────────────── */
-
-const MOCK_RESPONSES = [
-  `Thanks for reaching out. I'm **AMD Compass** — your guide to AMD's vetted AI tool catalog.
-
-To point you in the right direction, I need a bit more context:
-
-- Are you working on a **code generation**, **RAG pipeline**, **data analysis**, or **inference** task?
-- What's your target environment — cloud, on-prem, or hybrid?
-
-This helps me narrow to the best-fit tools for your situation.`,
-
-  `Got it. One more question before I recommend: what's the **scale** you're designing for?
-
-- Prototype / internal experiment
-- Team-level production workload
-- Enterprise-scale deployment
-
-This matters because some tools in the catalog are optimized for throughput at scale, while others shine in low-latency interactive settings.`,
-
-  `## Executive Summary
-
-Based on your requirements, I've identified two strong candidates from the AMD AI tool catalog.
-
-## Recommended Approach
-
-**Primary: AMD ROCm + LangChain**
-- Native GPU acceleration on AMD hardware
-- Mature ecosystem for RAG pipelines
-- Strong community and documentation
-
-**Secondary: Databricks MLflow + Vector Search**
-- Better for teams already in the Databricks ecosystem
-- Unified experiment tracking and model registry
-- Higher operational overhead at scale
-
-## Implementation Steps
-
-1. Validate GPU driver stack against ROCm 6.x compatibility matrix
-2. Stand up a LangChain pipeline with a HuggingFace embedding model
-3. Connect your vector store (Chroma, FAISS, or Databricks Vector Search)
-4. Instrument with MLflow for experiment tracking
-
-## Trade-offs
-
-| Factor | ROCm + LangChain | Databricks |
-|---|---|---|
-| Setup complexity | Medium | Low |
-| AMD hardware optimization | Native | Partial |
-| Cost at scale | Lower | Higher |
-
-## Advanced Considerations
-
-- Consider quantized models (GPTQ / AWQ) on MI300X with memory constraints
-- Implement reranking (Cohere Rerank or cross-encoder) for retrieval quality
-- Evaluate vLLM as a serving layer for high-concurrency inference`
-];
-
 const api = {
-  sendMessage: async ({ message, userId, chatId, history, turnCount }) => {
-    // ── SWAP THIS BLOCK TO CONNECT REAL BACKEND ──
-    await new Promise(r => setTimeout(r, 1100 + Math.random() * 700));
-    return MOCK_RESPONSES[Math.min(turnCount, MOCK_RESPONSES.length - 1)];
-    // ────────────────────────────────────────────
+  createChat: async () => {
+    const res = await fetch('/api/chats', { method: 'POST' });
+    if (!res.ok) {
+      throw new Error('Failed to create chat');
+    }
+    const data = await res.json();
+    return data.chat_id;
+  },
+  sendMessage: async ({ message, userId, chatId }) => {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: userId,
+        chat_id: chatId,
+        message
+      })
+    });
+
+    if (!res.ok) {
+      let errorText;
+      try {
+        errorText = await res.text();
+      } catch {
+        errorText = 'Request failed';
+      }
+      throw new Error(errorText || 'Request failed');
+    }
+
+    const data = await res.json();
+    return data.response;
   }
 };
 
-/* ─── DOWNLOAD ────────────────────────────────────────────────────────────── */
 function downloadTxt(chat, msgs) {
   const lines = [
-    `AMD Compass — Chat Log`,
+    'AMD Compass - Chat Log',
     `Title: ${chat.title}`,
     `Chat ID: ${chat.id}`,
     `Date: ${new Date(chat.createdAt).toLocaleString()}`,
-    '─'.repeat(50)
+    '-'.repeat(50)
   ];
   for (const m of msgs) {
     lines.push(`\n[${m.role === 'user' ? 'You' : 'AMD Compass'}]`);
@@ -230,48 +178,130 @@ function downloadTxt(chat, msgs) {
 function downloadJson(chat, msgs) {
   trigger(
     JSON.stringify({
-      chat_id: chat.id, title: chat.title,
+      chat_id: chat.id,
+      title: chat.title,
       created_at: new Date(chat.createdAt).toISOString(),
       messages: msgs.map(m => ({ role: m.role, content: m.content, timestamp: new Date(m.id).toISOString() }))
     }, null, 2),
-    `compass_${chat.id}.json`, 'application/json'
+    `compass_${chat.id}.json`,
+    'application/json'
   );
 }
 
 function trigger(content, filename, mime) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
-  a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-/* ─── MARKDOWN ────────────────────────────────────────────────────────────── */
 function parseMarkdown(text) {
   const lines = text.split('\n');
   const blocks = [];
-  let paraLines = [], listItems = [], listType = null, codeLines = [], inCode = false;
-  const flushPara = () => { if (paraLines.length) { blocks.push({ type: 'p', content: paraLines.join(' ') }); paraLines = []; } };
-  const flushList = () => { if (listItems.length) { blocks.push({ type: listType, items: [...listItems] }); listItems = []; listType = null; } };
-  const flushCode = () => { if (codeLines.length) { blocks.push({ type: 'code', content: codeLines.join('\n') }); codeLines = []; } };
+  let paraLines = [];
+  let listItems = [];
+  let listType = null;
+  let codeLines = [];
+  let inCode = false;
+
+  const flushPara = () => {
+    if (paraLines.length) {
+      blocks.push({ type: 'p', content: paraLines.join(' ') });
+      paraLines = [];
+    }
+  };
+
+  const flushList = () => {
+    if (listItems.length) {
+      blocks.push({ type: listType, items: [...listItems] });
+      listItems = [];
+      listType = null;
+    }
+  };
+
+  const flushCode = () => {
+    if (codeLines.length) {
+      blocks.push({ type: 'code', content: codeLines.join('\n') });
+      codeLines = [];
+    }
+  };
 
   for (const line of lines) {
-    if (line.trim().startsWith('```')) { flushPara(); flushList(); inCode ? (flushCode(), inCode = false) : (inCode = true); continue; }
-    if (inCode) { codeLines.push(line); continue; }
-    if (!line.trim()) { flushPara(); flushList(); continue; }
+    if (line.trim().startsWith('```')) {
+      flushPara();
+      flushList();
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      flushPara();
+      flushList();
+      continue;
+    }
     const hm = line.match(/^(#{1,3})\s+(.*)$/);
-    if (hm) { flushPara(); flushList(); blocks.push({ type: `h${hm[1].length}`, content: hm[2] }); continue; }
+    if (hm) {
+      flushPara();
+      flushList();
+      blocks.push({ type: `h${hm[1].length}`, content: hm[2] });
+      continue;
+    }
     const um = line.match(/^[-*]\s+(.*)$/);
-    if (um) { flushPara(); if (listType && listType !== 'ul') flushList(); listType = 'ul'; listItems.push(um[1]); continue; }
+    if (um) {
+      flushPara();
+      if (listType && listType !== 'ul') flushList();
+      listType = 'ul';
+      listItems.push(um[1]);
+      continue;
+    }
     const om = line.match(/^\d+\.\s+(.*)$/);
-    if (om) { flushPara(); if (listType && listType !== 'ol') flushList(); listType = 'ol'; listItems.push(om[1]); continue; }
-    if (line.match(/^\|.*\|$/)) { flushPara(); flushList(); blocks.push({ type: 'tr', content: line }); continue; }
+    if (om) {
+      flushPara();
+      if (listType && listType !== 'ol') flushList();
+      listType = 'ol';
+      listItems.push(om[1]);
+      continue;
+    }
+    if (line.startsWith('> ')) {
+      flushPara();
+      flushList();
+      blocks.push({ type: 'quote', content: line.slice(2) });
+      continue;
+    }
+    if (line.match(/^\|.*\|$/)) {
+      flushPara();
+      flushList();
+      blocks.push({ type: 'tr', content: line });
+      continue;
+    }
     paraLines.push(line.trim());
   }
-  flushPara(); flushList(); if (inCode) flushCode();
+  flushPara();
+  flushList();
+  if (inCode) flushCode();
 
-  const out = []; let tableRows = [];
+  const out = [];
+  let tableRows = [];
   for (const b of blocks) {
-    if (b.type === 'tr') tableRows.push(b.content);
-    else { if (tableRows.length) { out.push({ type: 'table', rows: [...tableRows] }); tableRows = []; } out.push(b); }
+    if (b.type === 'tr') {
+      tableRows.push(b.content);
+    } else {
+      if (tableRows.length) {
+        out.push({ type: 'table', rows: [...tableRows] });
+        tableRows = [];
+      }
+      out.push(b);
+    }
   }
   if (tableRows.length) out.push({ type: 'table', rows: tableRows });
   return out;
@@ -281,19 +311,32 @@ function Inline({ text }) {
   const matches = [];
   const patterns = [
     { re: /\*\*([^*]+)\*\*/g, render: (m, i) => <strong key={i}>{m[1]}</strong> },
-    { re: /`([^`]+)`/g,       render: (m, i) => <code key={i} style={{ fontFamily: 'var(--mono)', fontSize: '0.87em', background: 'rgba(128,128,128,0.12)', padding: '1px 5px', borderRadius: 3 }}>{m[1]}</code> },
-    { re: /\*([^*]+)\*/g,     render: (m, i) => <em key={i}>{m[1]}</em> },
+    {
+      re: /`([^`]+)`/g,
+      render: (m, i) => (
+        <code key={i} style={{ fontFamily: 'var(--mono)', fontSize: '0.87em', background: 'rgba(128,128,128,0.12)', padding: '1px 5px', borderRadius: 3 }}>
+          {m[1]}
+        </code>
+      )
+    },
+    { re: /\*([^*]+)\*/g, render: (m, i) => <em key={i}>{m[1]}</em> }
   ];
   for (const { re, render } of patterns) {
-    re.lastIndex = 0; let m;
-    while ((m = re.exec(text)) !== null) matches.push({ index: m.index, end: m.index + m[0].length, m, render });
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      matches.push({ index: m.index, end: m.index + m[0].length, m, render });
+    }
   }
   matches.sort((a, b) => a.index - b.index);
-  let cursor = 0, key = 0; const out = [];
+  let cursor = 0;
+  let key = 0;
+  const out = [];
   for (const { index, end, m, render } of matches) {
     if (index < cursor) continue;
     if (index > cursor) out.push(text.slice(cursor, index));
-    out.push(render(m, key++)); cursor = end;
+    out.push(render(m, key++));
+    cursor = end;
   }
   if (cursor < text.length) out.push(text.slice(cursor));
   return <>{out}</>;
@@ -308,9 +351,10 @@ function MsgContent({ text, isUser }) {
         if (b.type === 'h1') return <h3 key={i} style={{ fontSize: 16, fontWeight: 600, margin: '14px 0 6px' }}><Inline text={b.content} /></h3>;
         if (b.type === 'h2') return <h4 key={i} style={{ fontSize: 15, fontWeight: 600, margin: '12px 0 5px' }}><Inline text={b.content} /></h4>;
         if (b.type === 'h3') return <h5 key={i} style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 4px' }}><Inline text={b.content} /></h5>;
-        if (b.type === 'p')  return <p key={i} style={{ margin: '0 0 9px' }}><Inline text={b.content} /></p>;
+        if (b.type === 'p') return <p key={i} style={{ margin: '0 0 9px' }}><Inline text={b.content} /></p>;
         if (b.type === 'ul') return <ul key={i} style={{ margin: '0 0 9px', paddingLeft: 18 }}>{b.items.map((it, j) => <li key={j} style={{ marginBottom: 3 }}><Inline text={it} /></li>)}</ul>;
         if (b.type === 'ol') return <ol key={i} style={{ margin: '0 0 9px', paddingLeft: 18 }}>{b.items.map((it, j) => <li key={j} style={{ marginBottom: 3 }}><Inline text={it} /></li>)}</ol>;
+        if (b.type === 'quote') return <blockquote key={i} style={{ borderLeft: '3px solid var(--border-strong)', paddingLeft: 10, margin: '0 0 10px', color: 'var(--text-secondary)' }}><Inline text={b.content} /></blockquote>;
         if (b.type === 'code') return <pre key={i} style={{ fontFamily: 'var(--mono)', fontSize: 12, background: 'rgba(128,128,128,0.09)', padding: '10px 12px', borderRadius: 6, overflowX: 'auto', margin: '0 0 9px', lineHeight: 1.6 }}><code>{b.content}</code></pre>;
         if (b.type === 'table') {
           const rows = b.rows.filter(r => !r.match(/^\|[-| ]+\|$/));
@@ -332,31 +376,28 @@ function MsgContent({ text, isUser }) {
   );
 }
 
-/* ─── ICONS ───────────────────────────────────────────────────────────────── */
-const PlusIcon     = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/></svg>;
-const SendIcon     = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
-const ChatIcon     = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
-const SunIcon      = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>;
-const MoonIcon     = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>;
+const PlusIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="4" x2="12" y2="20"/><line x1="4" y1="12" x2="20" y2="12"/></svg>;
+const SendIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>;
+const ChatIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+const SunIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>;
+const MoonIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>;
 const DownloadIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
-const TrashIcon    = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
-const CopyIcon     = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
-const UserIcon     = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
-const CompassIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>;
+const TrashIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>;
+const CopyIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+const UserIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+const CompassIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>;
 
-/* ─── THINKING ────────────────────────────────────────────────────────────── */
 function Thinking() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 13px', background: 'var(--thinking-bg)', border: '1px solid var(--thinking-border)', borderRadius: 8, width: 'fit-content' }}>
       <span style={{ fontSize: 12.5, color: 'var(--thinking-text)', fontWeight: 500 }}>Compass is navigating</span>
-      {[0,1,2].map(i => (
-        <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--thinking-text)', display: 'inline-block', animation: `thinking 1.2s ease-in-out ${i*0.2}s infinite` }} />
+      {[0, 1, 2].map(i => (
+        <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--thinking-text)', display: 'inline-block', animation: `thinking 1.2s ease-in-out ${i * 0.2}s infinite` }} />
       ))}
     </div>
   );
 }
 
-/* ─── USER MODAL ─────────────────────────────────────────────────────────── */
 function UserModal({ onSave }) {
   const [val, setVal] = useState('');
   return (
@@ -398,74 +439,97 @@ function UserModal({ onSave }) {
 }
 
 const STARTERS = [
-  "I need a tool for building a RAG pipeline on AMD hardware",
-  "What AI tools are available for code generation?",
-  "Help me choose a tool for fine-tuning LLMs at scale",
-  "What's best for real-time inference with low latency?",
+  'I need a tool for building a RAG pipeline on AMD hardware',
+  'What AI tools are available for code generation?',
+  'Help me choose a tool for fine-tuning LLMs at scale',
+  "What's best for real-time inference with low latency?"
 ];
 
-/* ─── APP ─────────────────────────────────────────────────────────────────── */
 function App() {
   const stored = loadStorage();
 
-  const [theme, setTheme]               = useState('light');
-  const [userId, setUserId]             = useState(stored?.userId || null);
-  const [showModal, setShowModal]       = useState(!stored?.userId);
-  const [chats, setChats]               = useState(stored?.chats || []);
-  const [messages, setMessages]         = useState(stored?.messages || {});
-  const [turnCounts, setTurnCounts]     = useState({});
+  const [theme, setTheme] = useState('light');
+  const [userId, setUserId] = useState(stored?.userId || null);
+  const [showModal, setShowModal] = useState(!stored?.userId);
+  const [chats, setChats] = useState(stored?.chats || []);
+  const [messages, setMessages] = useState(stored?.messages || {});
   const [activeChatId, setActiveChatId] = useState(stored?.chats?.[0]?.id || null);
-  const [input, setInput]               = useState('');
-  const [isLoading, setIsLoading]       = useState(false);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(false);
 
   const messagesEndRef = useRef(null);
-  const textareaRef    = useRef(null);
-  const exportMenuRef  = useRef(null);
+  const textareaRef = useRef(null);
+  const exportMenuRef = useRef(null);
 
-  useEffect(() => { if (userId) saveStorage({ userId, chats, messages }); }, [userId, chats, messages]);
-  useEffect(() => { document.body.setAttribute('data-theme', theme); }, [theme]);
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading, activeChatId]);
   useEffect(() => {
-    const h = e => { if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setShowExportMenu(false); };
+    if (userId) saveStorage({ userId, chats, messages });
+  }, [userId, chats, messages]);
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading, activeChatId]);
+
+  useEffect(() => {
+    const h = e => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setShowExportMenu(false);
+      }
+    };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const handleSetUser = id => { setUserId(id); setShowModal(false); saveStorage({ userId: id, chats, messages }); };
+  const handleSetUser = id => {
+    setUserId(id);
+    setShowModal(false);
+    saveStorage({ userId: id, chats, messages });
+  };
 
-  const createNewChat = useCallback(() => {
-    const id = generateId('chat');
-    const chat = { id, title: 'New conversation', createdAt: Date.now() };
-    setChats(prev => [chat, ...prev]);
-    setMessages(prev => ({ ...prev, [id]: [] }));
-    setTurnCounts(prev => ({ ...prev, [id]: 0 }));
-    setActiveChatId(id);
-    setShowExportMenu(false);
-  }, []);
+  const createNewChat = useCallback(async () => {
+    if (isLoading) return;
+    try {
+      const id = await api.createChat();
+      const chat = { id, title: 'New conversation', createdAt: Date.now() };
+      setChats(prev => [chat, ...prev]);
+      setMessages(prev => ({ ...prev, [id]: [] }));
+      setActiveChatId(id);
+      setShowExportMenu(false);
+    } catch (err) {
+      alert(`Failed to create chat: ${err.message}`);
+    }
+  }, [isLoading]);
 
   const deleteChat = (chatId, e) => {
     e.stopPropagation();
     const next = chats.filter(c => c.id !== chatId);
     setChats(next);
-    setMessages(prev => { const n = { ...prev }; delete n[chatId]; return n; });
+    setMessages(prev => {
+      const n = { ...prev };
+      delete n[chatId];
+      return n;
+    });
     if (activeChatId === chatId) setActiveChatId(next[0]?.id || null);
   };
 
-  const activeChat     = chats.find(c => c.id === activeChatId) || null;
+  const activeChat = chats.find(c => c.id === activeChatId) || null;
   const activeMessages = activeChatId ? (messages[activeChatId] || []) : [];
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading || !activeChatId) return;
-    const chatId     = activeChatId;
-    const currentTurn = turnCounts[chatId] || 0;
-    const userMsg    = { role: 'user', content: input.trim(), id: Date.now() };
-    const history    = messages[chatId] || [];
+    if (!input.trim() || isLoading || !activeChatId || !userId) return;
+
+    const chatId = activeChatId;
+    const pendingInput = input.trim();
+    const userMsg = { role: 'user', content: pendingInput, id: Date.now() };
 
     setMessages(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), userMsg] }));
-    if (currentTurn === 0) {
-      const title = input.trim().slice(0, 42) + (input.trim().length > 42 ? '…' : '');
+    if ((messages[chatId] || []).length === 0) {
+      const title = pendingInput.slice(0, 42) + (pendingInput.length > 42 ? '...' : '');
       setChats(prev => prev.map(c => c.id === chatId ? { ...c, title } : c));
     }
     setInput('');
@@ -473,25 +537,50 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await api.sendMessage({ message: input.trim(), userId, chatId, history, turnCount: currentTurn });
+      const response = await api.sendMessage({
+        message: pendingInput,
+        userId,
+        chatId
+      });
       const botMsg = { role: 'assistant', content: response, id: Date.now() + 1 };
       setMessages(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), botMsg] }));
-      setTurnCounts(prev => ({ ...prev, [chatId]: currentTurn + 1 }));
     } catch (err) {
-      const errMsg = { role: 'assistant', content: `Something went wrong: ${err.message}`, id: Date.now() + 1 };
+      const errMsg = { role: 'assistant', content: `Error: ${err.message}`, id: Date.now() + 1 };
       setMessages(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), errMsg] }));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleKeyDown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
-
-  const copyUserId = () => {
-    navigator.clipboard?.writeText(userId || '').then(() => { setCopiedUserId(true); setTimeout(() => setCopiedUserId(false), 1800); });
+  const handleKeyDown = e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
-  const sideBtn = { display: 'flex', alignItems: 'center', gap: 7, width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--text-secondary)', fontFamily: 'var(--font)', fontSize: 13, cursor: 'pointer', transition: 'all var(--transition)' };
+  const copyUserId = () => {
+    navigator.clipboard?.writeText(userId || '').then(() => {
+      setCopiedUserId(true);
+      setTimeout(() => setCopiedUserId(false), 1800);
+    });
+  };
+
+  const sideBtn = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    width: '100%',
+    padding: '7px 10px',
+    borderRadius: 6,
+    border: '1px solid var(--border-strong)',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    fontFamily: 'var(--font)',
+    fontSize: 13,
+    cursor: 'pointer',
+    transition: 'all var(--transition)'
+  };
 
   const AmdBadge = ({ size = 'sm' }) => (
     <div style={{ background: 'var(--logo-bg)', borderRadius: 4, padding: size === 'sm' ? '3px 7px' : '4px 9px', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
@@ -509,8 +598,6 @@ function App() {
     <>
       {showModal && <UserModal onSave={handleSetUser} />}
       <div style={{ display: 'flex', height: '100vh', width: '100%', fontFamily: 'var(--font)' }}>
-
-        {/* ── SIDEBAR ──────────────────────────────────────────────────── */}
         <div style={{ width: 252, minWidth: 252, height: '100vh', background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '16px 14px 13px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 13 }}>
@@ -535,7 +622,9 @@ function App() {
             {chats.length === 0
               ? <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 24, lineHeight: 1.5 }}>No conversations yet.<br />Start one above.</p>
               : chats.map(chat => (
-                <div key={chat.id} onClick={() => setActiveChatId(chat.id)}
+                <div
+                  key={chat.id}
+                  onClick={() => setActiveChatId(chat.id)}
                   style={{ padding: '7px 9px', borderRadius: 6, marginBottom: 1, cursor: 'pointer', background: activeChatId === chat.id ? 'var(--bg-item-active)' : 'transparent', display: 'flex', alignItems: 'center', gap: 7, transition: 'background var(--transition)' }}
                   onMouseEnter={e => { if (activeChatId !== chat.id) e.currentTarget.style.background = 'var(--bg-item-hover)'; const b = e.currentTarget.querySelector('.del'); if (b) b.style.opacity = '1'; }}
                   onMouseLeave={e => { if (activeChatId !== chat.id) e.currentTarget.style.background = 'transparent'; const b = e.currentTarget.querySelector('.del'); if (b) b.style.opacity = '0'; }}
@@ -573,10 +662,7 @@ function App() {
           </div>
         </div>
 
-        {/* ── MAIN ─────────────────────────────────────────────────────── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', minWidth: 0 }}>
-
-          {/* Header */}
           <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', letterSpacing: '-0.1px' }}>
@@ -596,7 +682,7 @@ function App() {
                     <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--bg-input)', border: '1px solid var(--border-strong)', borderRadius: 8, boxShadow: 'var(--shadow-lg)', minWidth: 170, zIndex: 50, overflow: 'hidden', animation: 'fadeUp 0.15s ease' }}>
                       {[
                         { label: 'Download as .txt', action: () => { downloadTxt(activeChat, activeMessages); setShowExportMenu(false); } },
-                        { label: 'Download as .json', action: () => { downloadJson(activeChat, activeMessages); setShowExportMenu(false); } },
+                        { label: 'Download as .json', action: () => { downloadJson(activeChat, activeMessages); setShowExportMenu(false); } }
                       ].map(({ label, action }) => (
                         <button key={label} onClick={action}
                           style={{ width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', color: 'var(--text-primary)', fontFamily: 'var(--font)', fontSize: 13, textAlign: 'left', cursor: 'pointer', transition: 'background var(--transition)' }}
@@ -610,12 +696,11 @@ function App() {
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, background: 'var(--tag-bg)', border: '1px solid var(--tag-border)' }}>
                 <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--amd-red)' }} />
-                <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--amd-red)', letterSpacing: '0.05em' }}>MOCK</span>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--amd-red)', letterSpacing: '0.05em' }}>LIVE</span>
               </div>
             </div>
           </div>
 
-          {/* Messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px 24px 8px' }}>
             {activeMessages.length === 0 ? (
               <div style={{ maxWidth: 540, margin: '44px auto 0', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
@@ -629,7 +714,7 @@ function App() {
                   Where do you need to go today?
                 </h2>
                 <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.65, marginBottom: 26 }}>
-                  Describe what you're building and Compass will guide you to the right tool from AMD's vetted AI catalog.
+                  Describe what you are building and Compass will guide you to the right tool from AMD's vetted AI catalog.
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, textAlign: 'left' }}>
                   {STARTERS.map((p, i) => (
@@ -653,7 +738,9 @@ function App() {
                       background: msg.role === 'user' ? 'var(--bg-user-msg)' : 'var(--bg-bot-msg)',
                       color: msg.role === 'user' ? 'var(--text-user-msg)' : 'var(--text-bot-msg)',
                       border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
-                      boxShadow: 'var(--shadow)', fontSize: 14, lineHeight: 1.65,
+                      boxShadow: 'var(--shadow)',
+                      fontSize: 14,
+                      lineHeight: 1.65
                     }}>
                       <MsgContent text={msg.content} isUser={msg.role === 'user'} />
                     </div>
@@ -670,21 +757,20 @@ function App() {
             )}
           </div>
 
-          {/* Input */}
           <div style={{ padding: '14px 24px 20px', flexShrink: 0 }}>
             <div style={{ maxWidth: 720, margin: '0 auto' }}>
               <div style={{ background: 'var(--bg-input)', border: '1px solid var(--border-strong)', borderRadius: 11, padding: '10px 12px', boxShadow: 'var(--shadow-lg)' }}>
                 <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                  disabled={!activeChatId}
-                  placeholder={activeChatId ? "Describe what you're building or the problem you need to solve..." : "Create a new conversation to get started"}
+                  disabled={!activeChatId || !userId}
+                  placeholder={activeChatId ? "Describe what you're building or the problem you need to solve..." : 'Create a new conversation to get started'}
                   rows={1}
                   style={{ width: '100%', border: 'none', outline: 'none', resize: 'none', background: 'transparent', fontFamily: 'var(--font)', fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6, maxHeight: 130, overflowY: 'auto' }}
                   onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 130) + 'px'; }}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Enter to send · Shift+Enter for new line</span>
-                  <button onClick={sendMessage} disabled={!input.trim() || isLoading || !activeChatId}
-                    style={{ width: 32, height: 32, borderRadius: 7, background: input.trim() && !isLoading && activeChatId ? 'var(--logo-bg)' : 'var(--border)', border: 'none', cursor: input.trim() && !isLoading && activeChatId ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--logo-text)', transition: 'background var(--transition)', flexShrink: 0 }}>
+                  <button onClick={sendMessage} disabled={!input.trim() || isLoading || !activeChatId || !userId}
+                    style={{ width: 32, height: 32, borderRadius: 7, background: input.trim() && !isLoading && activeChatId && userId ? 'var(--logo-bg)' : 'var(--border)', border: 'none', cursor: input.trim() && !isLoading && activeChatId && userId ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--logo-text)', transition: 'background var(--transition)', flexShrink: 0 }}>
                     <SendIcon />
                   </button>
                 </div>
